@@ -13,6 +13,7 @@ void    fs_initialize_free_block_bitmap(FileSystem *fs);
 ssize_t fs_allocate_free_block(FileSystem *fs);
 void    disk_clear_data(Disk *disk);
 void    block_clear_data(Block *block);
+void clear_block_by_num(Disk *disk, uint32_t block_num);
 
 bool    fs_load_inode(FileSystem *fs, size_t inode_number, Inode *node);
 bool    fs_save_inode(FileSystem *fs, size_t inode_number, Inode *node);
@@ -434,7 +435,7 @@ ssize_t fs_read(FileSystem *fs, size_t inode_number, char *data, size_t length, 
     }
 
     if (offset == inode.size) {
-        fprintf(stderr, "return HERE?!?");
+        //fprintf(stderr, "return HERE?!?i\n");
         return 0;
     }
 
@@ -910,17 +911,17 @@ ssize_t fs_write(FileSystem *fs, size_t inode_number, char *data, size_t length,
     }
 
     // lets see if this helps
-    write_inode.size = 0;
-    for (uint32_t k = 0; k < POINTERS_PER_INODE; ++k) {
-        write_inode.direct[k] = 0;
-    }
+    //write_inode.size = 0;
+    //for (uint32_t k = 0; k < POINTERS_PER_INODE; ++k) {
+    //    write_inode.direct[k] = 0;
+    //}
     
-    write_inode.indirect = 0;
 
     write_inode.valid = 1;
 
 
     ssize_t bytes_written = 0;
+    ssize_t total_bytes = 0;
     Block buffer;
 
     block_clear_data(&buffer);
@@ -964,27 +965,20 @@ ssize_t fs_write(FileSystem *fs, size_t inode_number, char *data, size_t length,
                         return -1;
                     }
 
-                    return write_inode.size;
+                    return total_bytes;
 
                 }
 
 
-                // clear block
-                Block tempBlock;
-                disk_read(fs->disk, block_num, tempBlock.data);
-            
-                block_clear_data(&tempBlock);
-    
-                disk_write(fs->disk, block_num, tempBlock.data);
-    
+                   
 
                 // add block_num to direct pointers list
                 write_inode.direct[i] = block_num;
-                // fprintf(stderr, "\n\nDirect link [%u]: %u\n\n", i, write_inode.direct[i]);
+                fprintf(stderr, "\n\nDirect link [%u]: %u\n\n", i, write_inode.direct[i]);
 
                 // write buffer to block @ block_num
                 disk_write(fs->disk, block_num, buffer.data);
-                write_inode.size += bytes_written;
+                total_bytes += bytes_written;
 
                 // set use_indirect flag to false
                 use_indirect = false;
@@ -1001,7 +995,7 @@ ssize_t fs_write(FileSystem *fs, size_t inode_number, char *data, size_t length,
                 // allocate block to hold indirect pointers
                 write_inode.indirect = fs_allocate_free_block(fs);
                 
-                fprintf(stderr, "indirect block at %u\n", write_inode.indirect);
+                //fprintf(stderr, "indirect block at %u\n", write_inode.indirect);
                 
                 if (write_inode.indirect > fs->meta_data.blocks) {
                     fprintf(stderr, "no more blocks available, couldnt make indirect block: exiting write\n");
@@ -1010,21 +1004,22 @@ ssize_t fs_write(FileSystem *fs, size_t inode_number, char *data, size_t length,
                         return -1;
                     }
 
-                    return write_inode.size;
+                    return total_bytes;
 
                 }
 
-                fprintf(stderr, "about to clear the indirect block\n");
+                //fprintf(stderr, "about to clear the indirect block\n");
         
+                //
                 // clear block
-                Block tempBlock;
-                disk_read(fs->disk, write_inode.indirect, tempBlock.data);
+                //Block tempBlock;
+                //disk_read(fs->disk, write_inode.indirect, tempBlock.data);
             
-                block_clear_data(&tempBlock);
+                //block_clear_data(&tempBlock);
     
-                disk_write(fs->disk, write_inode.indirect, tempBlock.data);
+                //disk_write(fs->disk, write_inode.indirect, tempBlock.data);
 
-                fprintf(stderr, "block has (hopefully) been cleared\n");
+                //fprintf(stderr, "block has (hopefully) been cleared\n");
             }
 
             Block pointerBlock;
@@ -1035,7 +1030,7 @@ ssize_t fs_write(FileSystem *fs, size_t inode_number, char *data, size_t length,
                 fprintf(stderr, "was block cleared? who knows, pointerBlock.pointers[%u] = %u\n", i, pointerBlock.pointers[i]);
                 if (!pointerBlock.pointers[i]) {
 
-                    fprintf(stderr, "block pointer %u\n", i);    
+                    //fprintf(stderr, "block pointer %u\n", i);    
 
                     // find available block
                     ssize_t block_num = fs_allocate_free_block(fs);
@@ -1047,7 +1042,7 @@ ssize_t fs_write(FileSystem *fs, size_t inode_number, char *data, size_t length,
                             return -1;
                         }
 
-                        return write_inode.size;
+                        return total_bytes;
 
                     }
 
@@ -1058,12 +1053,12 @@ ssize_t fs_write(FileSystem *fs, size_t inode_number, char *data, size_t length,
 
                 
                     // clear block
-                    Block tempBlock;
-                    disk_read(fs->disk, block_num, tempBlock.data);
+                    //Block tempBlock;
+                    //disk_read(fs->disk, block_num, tempBlock.data);
             
-                    block_clear_data(&tempBlock);
+                    //block_clear_data(&tempBlock);
     
-                    disk_write(fs->disk, block_num, tempBlock.data);
+                    //disk_write(fs->disk, block_num, tempBlock.data);
 
 
                     
@@ -1079,12 +1074,13 @@ ssize_t fs_write(FileSystem *fs, size_t inode_number, char *data, size_t length,
         }
     }
 
+    write_inode.size += total_bytes;
     if (!fs_save_inode(fs, inode_number, &write_inode)) {
         return -1;
     }
 
     //fprintf(stderr, "About to return\n\n");
-    return write_inode.size;
+    return total_bytes;
 }
 
 // helper function to initialize bitmap
@@ -1107,16 +1103,19 @@ void    fs_initialize_free_block_bitmap(FileSystem *fs) {
 // helper function to allocate a free block
 ssize_t fs_allocate_free_block(FileSystem *fs) {
 
-    fprintf(stderr, "fs_allocate: fs->meta_data.blocks = %u\n", fs->meta_data.blocks); 
+    //fprintf(stderr, "fs_allocate: fs->meta_data.blocks = %u\n", fs->meta_data.blocks); 
 
     // loop through free blocks bitmap
     for (uint32_t i = 0; i < fs->meta_data.blocks; i++) {
-        fprintf(stderr, "fs_allocate: looking at block %u\n", i);
+        //fprintf(stderr, "fs_allocate: looking at block %u\n", i);
     
         if (fs->free_blocks[i] == true) {
             fprintf(stderr, "found %u\n", i);
             // If a free block is found, occupy it and return the block number
             fs->free_blocks[i] = false;
+            clear_block_by_num(fs->disk, i);
+            
+
             return i;
         }
     }
@@ -1144,6 +1143,15 @@ void    block_clear_data(Block *block) {
     for (size_t i = 0; i < BLOCK_SIZE; ++i) {
         block->data[i] = 0;
     }
+}
+
+void    clear_block_by_num(Disk *disk, uint32_t block_num) {
+    Block block;
+    for (size_t i = 0; i < BLOCK_SIZE; ++i) {
+        block.data[i] = 0;
+    }
+
+    disk_write(disk, block_num, block.data);
 }
 
 
